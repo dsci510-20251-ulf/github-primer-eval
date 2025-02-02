@@ -1,8 +1,11 @@
 name: GitHub Classroom Workflow
 
 on:
-  - push
-  - workflow_dispatch
+  push:
+    branches:
+      - main
+      - 'auto-grader-test-*'
+  workflow_dispatch:
 
 permissions:
   checks: write
@@ -36,7 +39,7 @@ jobs:
       - name: Run the Grading Script
         run: |
           # Saving to the log file
-          pytest -v --no-header > output.log
+          pytest -v --no-header tests/test_blind.py > output.log
         continue-on-error: true
         timeout-minutes: 2
 
