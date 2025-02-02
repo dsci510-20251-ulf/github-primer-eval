@@ -1,0 +1,83 @@
+name: Master Autograder Workflow
+
+on:
+  workflow_dispatch:
+
+permissions:
+  checks: write
+  actions: read
+  contents: read
+
+jobs:
+  auto_grade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      GITHUB_TOKEN: ${{ secrets.CLASSROOM_GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      ORG_NAME: dsci510-20251-ulf
+      EVAL_REPO: github-primer-eval
+      LAB_NAME: github-primer
+      SUBMISSION_DIR: $LAB_NAME-submissions
+      DEBUG: api
+
+    steps:
+      - name: Set Current Timestamp
+        run: echo "CURR_TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")" >> "$GITHUB_ENV"
+
+      - name: Install GC CLI
+        run: gh extension install github/gh-classroom
+
+      - name: Git Config
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "Github Actions"
+
+      - name: Git Auth Status
+        run: gh status
+
+      - name: Clone Evaluation Repo
+        run: gh repo clone $ORG_NAME/$EVAL_REPO
+
+      - name: Clone Student Repositories
+        run: |
+          ls -l
+          gh auth status
+          gh classroom clone student-repos -a 742876
+        timeout-minutes: 4
+
+      - name: Copy Blind Tests and Create Pull Request
+        run: |
+          cd "$SUBMISSION_DIR"
+          
+          for student_repo in ./*; do
+            if [ -d "$student_repo" ]; then
+              repo_name=$(basename "$student_repo")
+              branch_name="auto-grader-test-$CURR_TIMESTAMP"
+          
+              cd "$student_repo"
+              git checkout -b "$student_repo"
+              
+              cp ../../$EVAL_REPO/requirements.txt .
+              if [ ! -d "./.github/workflows" ]; then
+                mkdir -p "./.github/workflows"
+              fi
+              
+              cp ../../$EVAL_REPO/.github/.workflows/classroom.yml ./.github/.workflows/classroom.yml
+              cp -r ../../$EVAL_REPO/tests .
+              
+              # commit changes and push to remote
+              git add .
+              git commit -m "github actions: auto grading files"
+              git push https://$GITHUB_TOKEN@github.com/$ORG_NAME/$repo_name.git "$branch_name"
+              
+              cd ..
+            fi
+          done
+        timeout-minutes: 3
+
+      - name: Cleanup Cloned Repositories
+        run: |
+          echo "Deleting the following directories:"
+          ls -d */
+          rm -rf */
