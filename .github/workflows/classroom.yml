@@ -1,0 +1,99 @@
+name: GitHub Classroom Workflow
+
+on:
+  - push
+  - workflow_dispatch
+
+permissions:
+  checks: write
+  actions: read
+  contents: read
+
+jobs:
+  run-auto-grade:
+    name: Autograding
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    outputs:
+      q1_max: ${{ steps.marks.outputs.q1_max }}
+      q1_score_gained: ${{ steps.marks.outputs.q1_score_gained }}
+      max_points: ${{ steps.marks.outputs.max_points }}
+      total_score_gained: ${{ steps.marks.outputs.total_score_gained }}
+      total_num_qs: ${{ steps.marks.outputs.total_num_qs }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the Grading Script
+        run: |
+          # Saving to the log file
+          pytest -v --no-header > output.log
+        continue-on-error: true
+        timeout-minutes: 2
+
+      - name: Test Suite Logs
+        run: |
+          cat output.log
+          echo "::warning title=Test Suite Logs::Click the above link to view Test Suite Logs & Cases Summary"
+        continue-on-error: true
+        timeout-minutes: 0.2
+
+      - name: Extract Marks from logs
+        id: marks
+        run: |
+          pytest_logs=$(cat output.log | sed 's/\x1B\[[0-9;]*[JKmsu]//g')
+          
+          max_points=30
+          total_num_qs=1
+          
+          q1_max=30
+          q1_tests_passed=$(echo "$pytest_logs" | grep test_number_addition | grep -o "PASSED" | wc -l)
+          q1_score_gained=$(($q1_tests_passed * 3))
+          
+          total_score_gained=$(($q1_score_gained))
+          
+          echo "q1_max=$q1_max" >> "$GITHUB_OUTPUT"
+          echo "q1_score_gained=$q1_score_gained" >> "$GITHUB_OUTPUT"
+          
+          echo "max_points=$max_points" >> "$GITHUB_OUTPUT"
+          echo "total_score_gained=$total_score_gained" >> "$GITHUB_OUTPUT"
+          echo "total_num_qs=$total_num_qs" >> "$GITHUB_OUTPUT"
+
+  generate-report:
+    name: Grading Report Generation
+    runs-on: ubuntu-latest
+    timeout-minutes: 0.5
+
+    needs: run-auto-grade
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_RUN_ID: ${{ github.run_id }}
+
+      q1_max: ${{ needs.run-auto-grade.outputs.q1_max }}
+      q1_score_gained: ${{ needs.run-auto-grade.outputs.q1_score_gained }}
+      max_points: ${{ needs.run-auto-grade.outputs.max_points }}
+      total_score_gained: ${{ needs.run-auto-grade.outputs.total_score_gained }}
+      total_num_qs: ${{ needs.run-auto-grade.outputs.total_num_qs }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Create Job Summary
+        run: |
+          echo "## Evaluation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "---"
+          echo "#### Grading Report" >> $GITHUB_STEP_SUMMARY
+          echo "|                    | Marks Obtained          | Max Possible     |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------------------|-------------------------|------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Question 1         | $q1_score_gained        | $q1_max          |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Points       | $total_score_gained     | $max_points      |" >> $GITHUB_STEP_SUMMARY
